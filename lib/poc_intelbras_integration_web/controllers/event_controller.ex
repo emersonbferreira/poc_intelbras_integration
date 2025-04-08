@@ -1,33 +1,56 @@
 defmodule PocIntelbrasIntegrationWeb.EventController do
   use PocIntelbrasIntegrationWeb, :controller
-
-  # DVR settings
-  @dvr_ip "192.168.1.100"
-  @dvr_user "admin"
-  @dvr_pass "dvr_password"
+  alias PocIntelbrasIntegration.{RecorderDevices, Cameras, Snapshots}
 
   # Endpoint to receive events
   def receive_event(conn, params) do
     IO.inspect(params, label: "Received event")
 
-    case Map.get(params, "channel") do
-      nil ->
-        send_resp(conn, 400, "Channel not found in event")
-      channel ->
-        case request_snapshot(channel) do
-          {:ok, image_data} ->
-            save_snapshot(image_data, channel, Map.get(params, "time"))
-            json(conn, %{status: "success"})
-          {:error, reason} ->
-            send_resp(conn, 500, "Error getting snapshot: #{reason}")
-        end
+    channel = Map.get(params, "channel")
+    timestamp = Map.get(params, "time")
+
+    if channel && timestamp do
+      dvr_ip = conn.remote_ip |> :inet.ntoa() |> to_string()
+      case RecorderDevices.get_by_ip(dvr_ip) do
+        nil ->
+          send_resp(conn, 400, "DVR device not registered")
+        recorder_device ->
+          # Fetches or creates the camera associated with the channel
+          camera =
+            case Cameras.get_by_channel_and_device(channel, recorder_device.id) do
+              nil ->
+                {:ok, camera} = Cameras.create_camera(%{
+                  channel: channel,
+                  name: "Camera #{channel}",
+                  recorder_device_id: recorder_device.id
+                })
+                camera
+              camera ->
+                camera
+            end
+
+          # Requests the snapshot and saves it in the database
+          case request_snapshot(recorder_device, channel) do
+            {:ok, image_data} ->
+              {:ok, _snapshot} = Snapshots.create_snapshot(%{
+                camera_id: camera.id,
+                image: image_data,
+                timestamp: DateTime.from_iso8601(timestamp) |> elem(1)
+              })
+              json(conn, %{status: "success"})
+            {:error, reason} ->
+              send_resp(conn, 500, "Error getting snapshot: #{reason}")
+          end
+      end
+    else
+      send_resp(conn, 400, "Channel or timestamp not found in the event")
     end
   end
 
-  # Function to request snapshot from DVR
-  defp request_snapshot(channel) do
-    url = "http://#{@dvr_ip}/cgi-bin/snapshot.cgi?channel=#{channel}"
-    auth = Base.encode64("#{@dvr_user}:#{@dvr_pass}")
+  # Function to request the snapshot from the DVR
+  defp request_snapshot(recorder_device, channel) do
+    url = "http://#{recorder_device.ip_address}/cgi-bin/snapshot.cgi?channel=#{channel}"
+    auth = Base.encode64("#{recorder_device.username}:#{recorder_device.password}")
 
     headers = [
       {"Authorization", "Basic #{auth}"}
@@ -41,14 +64,5 @@ defmodule PocIntelbrasIntegrationWeb.EventController do
       {:error, %HTTPoison.Error{reason: reason}} ->
         {:error, inspect(reason)}
     end
-  end
-
-  # Function to save the snapshot
-  defp save_snapshot(image_data, channel, timestamp) do
-    safe_timestamp = String.replace(timestamp || DateTime.utc_now() |> to_string(), ":", "-")
-    filename = "snapshot_channel_#{channel}_#{safe_timestamp}.jpg"
-
-    File.write!(filename, image_data)
-    IO.puts("Image saved as #{filename}")
   end
 end

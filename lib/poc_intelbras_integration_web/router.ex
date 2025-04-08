@@ -9,7 +9,11 @@ defmodule PocIntelbrasIntegrationWeb.Router do
     pipe_through :api
 
     #example request
-    #curl -X POST -H "Content-Type: application/json" -d '{"event": "MotionDetect", "channel": 1, "time": "2025-04-07T14:00:00", "status": "start"}' http://localhost:4000/api/endpoint
+    #curl -X POST -H "Content-Type: application/json" -d '{"name": "DVR Principal", "model": "MHDX 1016", "brand": "Intelbras", "ip_address": "192.168.1.100", "username": "admin", "password": "admin"}' http://localhost:4000/api/recorder_devices
+    post "/recorder_devices", RecorderDeviceController, :create
+
+    #example request
+    #curl -X POST -H "Content-Type: application/json" -d '{"event": "MotionDetect", "channel": 1, "time": "2025-04-07T14:00:00", "status": "start"}' http://localhost:4000/api/receive_event
     post "/receive_event", EventController, :receive_event
   end
 
