@@ -1,4 +1,4 @@
-# PocIntelbrasIntegration
+#  Proof of Concept for Intelbras Recorders with HTTP API Integration
 
 This project is a Proof of Concept for the integration between Intelbras DVRs, NVRs and IP Cameras with support HTTP API 3.59.
 
